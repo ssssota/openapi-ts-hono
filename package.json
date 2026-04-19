@@ -28,7 +28,7 @@
   "scripts": {
     "build": "vp pack src/index.ts --dts",
     "test": "vp test",
-    "lint": "vp check",
+    "check": "vp check",
     "fmt": "vp check --fix"
   },
   "devDependencies": {
