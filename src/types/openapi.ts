@@ -1,5 +1,3 @@
-import type { Env, Hono } from "hono";
-
 export type ConvertPath<P extends string> = P extends `${infer A}{${infer Param}}${infer B}`
   ? `${A}:${Param}${ConvertPath<B>}`
   : P;
@@ -50,9 +48,3 @@ export type IntoSchema<Paths> = {
       : `$${M}`]: IntoHonoEndpoint<NonNullable<Paths[P][M]>>;
   };
 };
-
-export type TypedHono<Paths, E extends Env = Env, B extends string = "/"> = Hono<
-  E,
-  IntoSchema<Paths>,
-  B
->;
