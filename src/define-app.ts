@@ -47,9 +47,22 @@ import type { DefineAppCheckNormalizedSchema } from "./types/index.js";
  *   };
  * }>()(new Hono().route("/api", users));
  * ```
+ *
+ * @example
+ * ```ts
+ * const userApp = defineApp<paths, "/users">()(
+ *   new Hono().get("/:id", (c) => {
+ *     return c.json({ id: c.req.param("id") });
+ *   }),
+ * );
+ *
+ * const app = defineApp<paths>()(new Hono().route("/users", userApp));
+ * ```
  */
-export function defineApp<Paths>(): <App extends HonoBase<any, any, any, any>>(
-  app: App & DefineAppCheckNormalizedSchema<App, Paths>,
+export function defineApp<Paths, BasePath extends string = "">(): <
+  App extends HonoBase<any, any, any, any>,
+>(
+  app: App & DefineAppCheckNormalizedSchema<App, Paths, BasePath>,
 ) => App {
   return (app) => app;
 }

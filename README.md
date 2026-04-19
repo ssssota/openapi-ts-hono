@@ -32,6 +32,14 @@ const app = defineAppWithPaths(
   }),
 );
 
+// sub app
+const userApp = defineApp<paths, "/users">()(
+  new Hono().get("/:id", (c) => {
+    return c.json({ id: c.req.param("id"), name: "Alice" });
+  }),
+);
+const routedApp = defineApp<paths>()(new Hono().route("/users", userApp));
+
 export default app;
 ```
 

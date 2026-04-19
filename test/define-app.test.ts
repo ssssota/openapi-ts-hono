@@ -40,6 +40,14 @@ type ApiUsersPath = {
   "/api/users/{id}": UserPath["/users/{id}"];
 };
 
+type UsersIndexPath = {
+  "/users": {
+    get: { responses: { 200: { content: { "application/json": { items: string[] } } } } };
+  };
+};
+
+type UsersSubAppPaths = UsersIndexPath & UserPath;
+
 type ApiUsersPathWithDelete = {
   "/api/users/{id}": UserPathWithDelete["/users/{id}"];
 };
@@ -84,6 +92,52 @@ type UploadAvatarPath = {
   };
 };
 
+type CreatedUserPath = {
+  "/users": {
+    post: {
+      requestBody: { content: { "application/json": { name: string } } };
+      responses: { 201: { content: { "application/json": { id: string } } } };
+    };
+  };
+};
+
+type CreatedUserPathOutputOnly = {
+  "/users": {
+    post: {
+      responses: { 201: { content: { "application/json": { id: string } } } };
+    };
+  };
+};
+
+type HealthTextPath = {
+  "/health": {
+    get: {
+      responses: { 200: { content: { "text/plain": string } } };
+    };
+  };
+};
+
+type DeleteUserNoContentPath = {
+  "/users/{id}": {
+    delete: {
+      parameters: { path: { id: string } };
+      responses: { 204: { content?: never } };
+    };
+  };
+};
+
+type FindUserPath = {
+  "/users/by-email": {
+    get: {
+      parameters: { query: { email: string } };
+      responses: {
+        200: { content: { "application/json": { id: string } } };
+        404: { content: { "text/plain": string } };
+      };
+    };
+  };
+};
+
 type SupportedPaths = {
   "/": {
     get: { responses: { 200: { content: { "application/json": { ok: true } } } } };
@@ -108,7 +162,11 @@ type FixtureImplementedPaths = Pick<
   "/" | "/pets" | "/pets/items" | "/pets/model" | "/pets/person" | "/unevaluated-properties"
 >;
 
-type ValidationResult<App extends HonoBase, Paths> = DefineAppCheckNormalizedSchema<App, Paths>;
+type ValidationResult<
+  App extends HonoBase,
+  Paths,
+  BasePath extends string = "",
+> = DefineAppCheckNormalizedSchema<App, Paths, BasePath>;
 
 const createUsersSubApp = () =>
   new Hono().get("/users/:id", (c) => c.json({ id: c.req.param("id") }));
@@ -154,6 +212,21 @@ test("supports route() composition", () => {
   expectTypeOf<ValidationResult<typeof app, ApiUsersPath>>().toEqualTypeOf<unknown>();
 });
 
+test("supports sub apps scoped by a base path generic", () => {
+  const userApp = defineApp<UsersSubAppPaths, "/users">()(
+    new Hono()
+      .get("/", (c) => c.json({ items: ["Alice"] }))
+      .get("/:id", (c) => c.json({ id: c.req.param("id") })),
+  );
+
+  const app = defineApp<UsersSubAppPaths>()(new Hono().route("/users", userApp));
+
+  expectTypeOf<
+    ValidationResult<typeof userApp, UsersSubAppPaths, "/users">
+  >().toEqualTypeOf<unknown>();
+  expectTypeOf<ValidationResult<typeof app, UsersSubAppPaths>>().toEqualTypeOf<unknown>();
+});
+
 test("supports route() with multiple methods", () => {
   const app = defineApp<ApiUsersPathWithDelete>()(
     new Hono().route("/api", createUsersSubAppWithDelete()),
@@ -166,17 +239,41 @@ test("works with openapi-typescript fixture paths when only implemented methods 
   const app = defineApp<FixtureImplementedPaths>()(
     new Hono()
       .get("/", (c) => c.json({}))
-      .get("/pets", sValidator("query", z.object({ limit: z.string().optional() })), (c) =>
-        c.json([]),
-      )
-      .get("/pets/items", (c) => c.json(["ok"] as const))
-      .get("/pets/model", sValidator("query", z.object({ limit: z.string().optional() })), (c) =>
-        c.json({}),
-      )
-      .get("/pets/person", sValidator("query", z.object({ limit: z.string().optional() })), (c) =>
-        c.json({ id: 1 }),
-      )
-      .get("/unevaluated-properties", (c) => c.json({ foo: "x", bar: 1 })),
+      .get("/pets", sValidator("query", z.object({ limit: z.string().optional() })), (c) => {
+        if (Math.random() > 0.5) {
+          return c.body(null, 400);
+        }
+
+        return c.json([], 200);
+      })
+      .get("/pets/items", (c) => {
+        if (Math.random() > 0.5) {
+          return c.body(null, 400);
+        }
+
+        return c.json(["ok"] as const, 200);
+      })
+      .get("/pets/model", sValidator("query", z.object({ limit: z.string().optional() })), (c) => {
+        if (Math.random() > 0.5) {
+          return c.body(null, 400);
+        }
+
+        return c.json({}, 200);
+      })
+      .get("/pets/person", sValidator("query", z.object({ limit: z.string().optional() })), (c) => {
+        if (Math.random() > 0.5) {
+          return c.body(null, 400);
+        }
+
+        return c.json({ id: 1 }, 200);
+      })
+      .get("/unevaluated-properties", (c) => {
+        if (Math.random() > 0.5) {
+          return c.body(null, 400);
+        }
+
+        return c.json({ foo: "x", bar: 1 }, 200);
+      }),
   );
 
   expectTypeOf<ValidationResult<typeof app, FixtureImplementedPaths>>().toEqualTypeOf<unknown>();
@@ -240,11 +337,49 @@ test("accepts compatible validated form, header, and cookie input", () => {
   expectTypeOf<ValidationResult<typeof app, UploadAvatarPath>>().toEqualTypeOf<unknown>();
 });
 
+test("accepts a created response with 201 application/json", () => {
+  const app = defineApp<CreatedUserPath>()(
+    new Hono().post("/users", sValidator("json", z.object({ name: z.string() })), (c) =>
+      c.json({ id: c.req.valid("json").name }, 201),
+    ),
+  );
+
+  expectTypeOf<ValidationResult<typeof app, CreatedUserPath>>().toEqualTypeOf<unknown>();
+});
+
+test("accepts a 204 no content response", () => {
+  const app = defineApp<DeleteUserNoContentPath>()(
+    new Hono().delete("/users/:id", (c) => c.body(null, 204)),
+  );
+
+  expectTypeOf<ValidationResult<typeof app, DeleteUserNoContentPath>>().toEqualTypeOf<unknown>();
+});
+
+test("accepts multiple responses with different statuses and content types", () => {
+  const app = defineApp<FindUserPath>()(
+    new Hono().get("/users/by-email", sValidator("query", z.object({ email: z.string() })), (c) => {
+      if (Math.random() > 0.5) {
+        return c.json({ id: c.req.valid("query").email }, 200);
+      }
+
+      return c.text("not found", 404);
+    }),
+  );
+
+  expectTypeOf<ValidationResult<typeof app, FindUserPath>>().toEqualTypeOf<unknown>();
+});
+
+test("accepts text/plain responses", () => {
+  const app = defineApp<HealthTextPath>()(new Hono().get("/health", (c) => c.text("ok", 200)));
+
+  expectTypeOf<ValidationResult<typeof app, HealthTextPath>>().toEqualTypeOf<unknown>();
+});
+
 test("reports an incompatible 200 application/json output", () => {
   const app = new Hono().get("/users/:id", (c) => c.json({ userId: c.req.param("id") }));
 
   expectTypeOf<ValidationResult<typeof app, UserPathOutputOnly>>().toEqualTypeOf<{
-    "Output mismatch at GET /users/:id": never;
+    "Output mismatch at GET /users/:id for 200 application/json": never;
   }>();
 });
 
@@ -289,7 +424,24 @@ test("reports a path parameter name mismatch", () => {
 
   expectTypeOf<ValidationResult<typeof app, UserPath>>().branded.toEqualTypeOf<{
     "Path input mismatch at GET /users/:id": never;
-    "Output mismatch at GET /users/:id": never;
+    "Output mismatch at GET /users/:id for 200 application/json": never;
+  }>();
+});
+
+test("reports mismatches relative to a sub app base path", () => {
+  const app = new Hono().get("/:userId", (c) => c.json({ id: c.req.param("userId") }));
+
+  expectTypeOf<ValidationResult<typeof app, UserPath, "/users">>().branded.toEqualTypeOf<{
+    "Path input mismatch at GET /:id": never;
+    "Output mismatch at GET /:id for 200 application/json": never;
+  }>();
+});
+
+test("reports a base path with no matching OpenAPI paths", () => {
+  const app = new Hono().get("/:id", (c) => c.json({ id: c.req.param("id") }));
+
+  expectTypeOf<ValidationResult<typeof app, UsersSubAppPaths, "/accounts">>().toEqualTypeOf<{
+    "Base path /accounts has no matching OpenAPI paths": never;
   }>();
 });
 
@@ -298,7 +450,7 @@ test("reports a nested route mounted under the wrong prefix", () => {
 
   expectTypeOf<ValidationResult<typeof app, ApiUsersPath>>().branded.toEqualTypeOf<{
     "Path input mismatch at GET /api/users/:id": never;
-    "Output mismatch at GET /api/users/:id": never;
+    "Output mismatch at GET /api/users/:id for 200 application/json": never;
   }>();
 });
 
@@ -306,6 +458,22 @@ test("reports a basePath mismatch", () => {
   const app = new Hono().basePath("/v1").get("/pets", (c) => c.json({ items: ["cat"] }));
 
   expectTypeOf<ValidationResult<typeof app, ApiPetsPath>>().branded.toEqualTypeOf<{
-    "Output mismatch at GET /api/pets": never;
+    "Output mismatch at GET /api/pets for 200 application/json": never;
+  }>();
+});
+
+test("reports an incompatible response status", () => {
+  const app = new Hono().post("/users", (c) => c.json({ id: "created" }, 200));
+
+  expectTypeOf<ValidationResult<typeof app, CreatedUserPathOutputOnly>>().toEqualTypeOf<{
+    "Output mismatch at POST /users for 201 application/json": never;
+  }>();
+});
+
+test("reports an incompatible response content type", () => {
+  const app = new Hono().get("/health", (c) => c.json({ ok: true }, 200));
+
+  expectTypeOf<ValidationResult<typeof app, HealthTextPath>>().toEqualTypeOf<{
+    "Output mismatch at GET /health for 200 text/plain": never;
   }>();
 });

@@ -1,5 +1,5 @@
 import type { HonoBase } from "hono/hono-base";
-import type { IntoSchema } from "./openapi.js";
+import type { IntoSchema, NormalizeBasePath } from "./openapi.js";
 import type { NormalizeReason, PrettyMethod, UnionToIntersection } from "./utility.js";
 
 export type AnyHono = HonoBase<any, any, any, any>;
@@ -23,7 +23,9 @@ export type NormalizeSchemaEntries<Schema> =
       : never
     : never;
 
-export type ExpectedEntries<Paths> = NormalizeSchemaEntries<IntoSchema<Paths>>;
+export type ExpectedEntries<Paths, BasePath extends string = ""> = NormalizeSchemaEntries<
+  IntoSchema<Paths, BasePath>
+>;
 
 export type ActualEntries<App extends AnyHono> =
   App extends HonoBase<any, infer Schema, any, any> ? NormalizeSchemaEntries<Schema> : never;
@@ -43,6 +45,17 @@ export type FindActualMethodsForPath<
   App extends AnyHono,
   Path extends string,
 > = Path extends keyof ActualMethodTable<App> ? ActualMethodTable<App>[Path] : never;
+
+type BasePathScopeReason<BasePath extends string> = {
+  [Key in `Base path ${NormalizeBasePath<BasePath>} has no matching OpenAPI paths`]: never;
+};
+
+type CheckBasePathScope<Paths, BasePath extends string> =
+  NormalizeBasePath<BasePath> extends ""
+    ? never
+    : [ExpectedEntries<Paths, BasePath>] extends [never]
+      ? BasePathScopeReason<BasePath>
+      : never;
 
 type InputTarget = "param" | "query" | "header" | "cookie" | "json" | "form";
 
@@ -175,22 +188,90 @@ type CheckMethodInputCompatibility<
       >
   : never;
 
+type OutputMismatchReason<Label extends string, Path extends string, Method extends string> = {
+  [Key in `Output mismatch at ${PrettyMethod<Method>} ${Path} for ${Label}`]: never;
+};
+
+type IsBroadContentfulStatus<Status> = [200] extends [Status]
+  ? [201] extends [Status]
+    ? [400] extends [Status]
+      ? [404] extends [Status]
+        ? [500] extends [Status]
+          ? [204] extends [Status]
+            ? false
+            : true
+          : false
+        : false
+      : false
+    : false
+  : false;
+
+type IsBroadStatus<Status> = [200] extends [Status]
+  ? [201] extends [Status]
+    ? [204] extends [Status]
+      ? [304] extends [Status]
+        ? [400] extends [Status]
+          ? [500] extends [Status]
+            ? true
+            : false
+          : false
+        : false
+      : false
+    : false
+  : false;
+
+type NormalizeActualStatus<Status> =
+  IsBroadStatus<Status> extends true
+    ? 200
+    : IsBroadContentfulStatus<Status> extends true
+      ? 200
+      : Status;
+
+type IsOutputFormatCompatible<ActualFormat extends string, ExpectedFormat extends string> = [
+  ActualFormat,
+] extends [ExpectedFormat]
+  ? [ExpectedFormat] extends [ActualFormat]
+    ? true
+    : false
+  : false;
+
+type IsStatusCompatible<ActualStatus extends number, ExpectedStatus extends number> = [
+  NormalizeActualStatus<ActualStatus>,
+] extends [ExpectedStatus]
+  ? [ExpectedStatus] extends [NormalizeActualStatus<ActualStatus>]
+    ? true
+    : false
+  : false;
+
 type CheckMethodOutputCompatibility<
   ActualMethod,
   ExpectedMethod,
   Path extends string,
   Method extends string,
-> = ExpectedMethod extends { output: infer Expected }
+> = ExpectedMethod extends {
+  output: infer Expected;
+  outputFormat: infer ExpectedFormat extends string;
+  status: infer ExpectedStatus extends number;
+  responseLabel: infer ExpectedLabel extends string;
+}
   ? [
       ActualMethod extends unknown
-        ? ActualMethod extends { outputFormat: "json"; output: infer Candidate }
-          ? [Candidate] extends [Expected]
-            ? Candidate
+        ? ActualMethod extends {
+            outputFormat: infer ActualFormat extends string;
+            output: infer Candidate;
+            status: infer ActualStatus extends number;
+          }
+          ? IsOutputFormatCompatible<ActualFormat, ExpectedFormat> extends true
+            ? IsStatusCompatible<ActualStatus, ExpectedStatus> extends true
+              ? [Candidate] extends [Expected]
+                ? Candidate
+                : never
+              : never
             : never
           : never
         : never,
     ] extends [never]
-    ? { [Key in `Output mismatch at ${PrettyMethod<Method>} ${Path}`]: never }
+    ? OutputMismatchReason<ExpectedLabel, Path, Method>
     : never
   : never;
 
@@ -206,25 +287,31 @@ export type CheckMethodInNormalizedSchema<
     >
   : { [Key in `${PrettyMethod<Method>} ${Path} is missing`]: never };
 
-export type CheckNormalizedSchema<App extends AnyHono, Paths> = NormalizeReason<
-  ExpectedEntries<Paths> extends infer Entry
-    ? Entry extends {
-        path: infer Path extends string;
-        methods: infer Methods extends Record<string, unknown>;
-      }
-      ? {
-          [Method in keyof Methods & string]: CheckMethodInNormalizedSchema<
-            FindActualMethodsForPath<App, Path>,
-            Methods,
-            Path,
-            Method
-          >;
-        }[keyof Methods & string]
-      : never
-    : never
+export type CheckNormalizedSchema<
+  App extends AnyHono,
+  Paths,
+  BasePath extends string = "",
+> = NormalizeReason<
+  | CheckBasePathScope<Paths, BasePath>
+  | (ExpectedEntries<Paths, BasePath> extends infer Entry
+      ? Entry extends {
+          path: infer Path extends string;
+          methods: infer Methods extends Record<string, unknown>;
+        }
+        ? {
+            [Method in keyof Methods & string]: CheckMethodInNormalizedSchema<
+              FindActualMethodsForPath<App, Path>,
+              Methods,
+              Path,
+              Method
+            >;
+          }[keyof Methods & string]
+        : never
+      : never)
 >;
 
-export type DefineAppCheckNormalizedSchema<App extends AnyHono, Paths> = CheckNormalizedSchema<
-  App,
-  Paths
->;
+export type DefineAppCheckNormalizedSchema<
+  App extends AnyHono,
+  Paths,
+  BasePath extends string = "",
+> = CheckNormalizedSchema<App, Paths, BasePath>;
