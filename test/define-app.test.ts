@@ -19,7 +19,9 @@ type UserPath = {
 
 type UserPathOutputOnly = {
   "/users/{id}": {
-    get: { responses: { 200: { content: { "application/json": { id: string } } } } };
+    get: {
+      responses: { 200: { content: { "application/json": { id: string } } } };
+    };
   };
 };
 
@@ -31,7 +33,9 @@ type UserPathWithDelete = {
     };
     delete: {
       parameters: { path: { id: string } };
-      responses: { 200: { content: { "application/json": { deleted: true } } } };
+      responses: {
+        200: { content: { "application/json": { deleted: true } } };
+      };
     };
   };
 };
@@ -42,7 +46,11 @@ type ApiUsersPath = {
 
 type UsersIndexPath = {
   "/users": {
-    get: { responses: { 200: { content: { "application/json": { items: string[] } } } } };
+    get: {
+      responses: {
+        200: { content: { "application/json": { items: string[] } } };
+      };
+    };
   };
 };
 
@@ -54,14 +62,20 @@ type ApiUsersPathWithDelete = {
 
 type ApiPetsPath = {
   "/api/pets": {
-    get: { responses: { 200: { content: { "application/json": { items: string[] } } } } };
+    get: {
+      responses: {
+        200: { content: { "application/json": { items: string[] } } };
+      };
+    };
   };
 };
 
 type CreateUserPath = {
   "/users": {
     post: {
-      requestBody: { content: { "application/json": { name: string; age: number } } };
+      requestBody: {
+        content: { "application/json": { name: string; age: number } };
+      };
       responses: { 200: { content: { "application/json": { id: string } } } };
     };
   };
@@ -71,7 +85,9 @@ type SearchUsersPath = {
   "/users": {
     get: {
       parameters: { query: { q: string } };
-      responses: { 200: { content: { "application/json": { items: string[] } } } };
+      responses: {
+        200: { content: { "application/json": { items: string[] } } };
+      };
     };
   };
 };
@@ -85,7 +101,9 @@ type UploadAvatarPath = {
         cookie: { session: string };
       };
       requestBody: {
-        content: { "multipart/form-data": { fileName?: string; orderId?: number } };
+        content: {
+          "multipart/form-data": { fileName?: string; orderId?: number };
+        };
       };
       responses: { 200: { content: { "application/json": { ok: true } } } };
     };
@@ -117,6 +135,16 @@ type HealthTextPath = {
   };
 };
 
+type AuthorizeHtmlPath = {
+  "/authorize": {
+    get: {
+      responses: { 200: { content: { "text/html": string } } };
+    };
+  };
+};
+
+type HealthAndSearchPaths = HealthTextPath & SearchUsersPath;
+
 type DeleteUserNoContentPath = {
   "/users/{id}": {
     delete: {
@@ -140,18 +168,32 @@ type FindUserPath = {
 
 type SupportedPaths = {
   "/": {
-    get: { responses: { 200: { content: { "application/json": { ok: true } } } } };
+    get: {
+      responses: { 200: { content: { "application/json": { ok: true } } } };
+    };
   };
   "/pets": ApiPetsPath["/api/pets"];
   "/pets/model": {
-    get: { responses: { 200: { content: { "application/json": { model: string } } } } };
+    get: {
+      responses: {
+        200: { content: { "application/json": { model: string } } };
+      };
+    };
   };
   "/pets/person": {
-    get: { responses: { 200: { content: { "application/json": { id: number | string } } } } };
+    get: {
+      responses: {
+        200: { content: { "application/json": { id: number | string } } };
+      };
+    };
   };
   "/unevaluated-properties": {
     get: {
-      responses: { 200: { content: { "application/json": { foo?: string; bar?: number } } } };
+      responses: {
+        200: {
+          content: { "application/json": { foo?: string; bar?: number } };
+        };
+      };
     };
   };
   "/users/{id}": UserPathWithDelete["/users/{id}"];
@@ -328,7 +370,10 @@ test("accepts compatible validated form, header, and cookie input", () => {
       sValidator("cookie", z.object({ session: z.string() })),
       sValidator(
         "form",
-        z.object({ fileName: z.string().optional(), orderId: z.string().optional() }),
+        z.object({
+          fileName: z.string().optional(),
+          orderId: z.string().optional(),
+        }),
       ),
       (c) => c.json({ ok: true }),
     ),
@@ -375,6 +420,14 @@ test("accepts text/plain responses", () => {
   expectTypeOf<ValidationResult<typeof app, HealthTextPath>>().toEqualTypeOf<unknown>();
 });
 
+test("accepts c.html responses as opaque outputs", () => {
+  const app = defineApp<AuthorizeHtmlPath>()(
+    new Hono().get("/authorize", (c) => c.html("<p>ok</p>", 200)),
+  );
+
+  expectTypeOf<ValidationResult<typeof app, AuthorizeHtmlPath>>().toEqualTypeOf<unknown>();
+});
+
 test("reports an incompatible 200 application/json output", () => {
   const app = new Hono().get("/users/:id", (c) => c.json({ userId: c.req.param("id") }));
 
@@ -401,6 +454,16 @@ test("reports an incompatible validated query input", () => {
   );
 
   expectTypeOf<ValidationResult<typeof app, SearchUsersPath>>().toEqualTypeOf<{
+    "Query input mismatch at GET /users": never;
+  }>();
+});
+
+test("preserves mismatches when another path is valid", () => {
+  const app = new Hono()
+    .get("/health", (c) => c.text("ok", 200))
+    .get("/users", (c) => c.json({ items: ["ok"] }));
+
+  expectTypeOf<ValidationResult<typeof app, HealthAndSearchPaths>>().toEqualTypeOf<{
     "Query input mismatch at GET /users": never;
   }>();
 });

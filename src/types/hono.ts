@@ -41,10 +41,21 @@ export type PathMethodTableFromEntries<Entries> = UnionToIntersection<
 
 export type ActualMethodTable<App extends AnyHono> = PathMethodTableFromEntries<ActualEntries<App>>;
 
+export type ActualMethodTableFromSchema<Schema> = PathMethodTableFromEntries<
+  NormalizeSchemaEntries<Schema>
+>;
+
 export type FindActualMethodsForPath<
   App extends AnyHono,
   Path extends string,
 > = Path extends keyof ActualMethodTable<App> ? ActualMethodTable<App>[Path] : never;
+
+export type FindActualMethodsForPathInSchema<
+  Schema,
+  Path extends string,
+> = Path extends keyof ActualMethodTableFromSchema<Schema>
+  ? ActualMethodTableFromSchema<Schema>[Path]
+  : never;
 
 type BasePathScopeReason<BasePath extends string> = {
   [Key in `Base path ${NormalizeBasePath<BasePath>} has no matching OpenAPI paths`]: never;
@@ -175,17 +186,15 @@ type CheckMethodInputCompatibility<
 > = ExpectedMethod extends { input: infer ExpectedInput extends object }
   ? [ExpectedInputTargets<ExpectedInput>] extends [never]
     ? never
-    : NormalizeReason<
-        {
-          [Target in ExpectedInputTargets<ExpectedInput>]: CheckMethodInputTargetCompatibility<
-            ActualMethod,
-            ExpectedInput,
-            Path,
-            Method,
-            Target
-          >;
-        }[ExpectedInputTargets<ExpectedInput>]
-      >
+    : {
+        [Target in ExpectedInputTargets<ExpectedInput>]: CheckMethodInputTargetCompatibility<
+          ActualMethod,
+          ExpectedInput,
+          Path,
+          Method,
+          Target
+        >;
+      }[ExpectedInputTargets<ExpectedInput>]
   : never;
 
 type OutputMismatchReason<Label extends string, Path extends string, Method extends string> = {
@@ -235,6 +244,8 @@ type IsOutputFormatCompatible<ActualFormat extends string, ExpectedFormat extend
     : false
   : false;
 
+type IsOpaqueOutputFormat<ActualFormat extends string> = string extends ActualFormat ? true : false;
+
 type IsStatusCompatible<ActualStatus extends number, ExpectedStatus extends number> = [
   NormalizeActualStatus<ActualStatus>,
 ] extends [ExpectedStatus]
@@ -261,13 +272,15 @@ type CheckMethodOutputCompatibility<
             output: infer Candidate;
             status: infer ActualStatus extends number;
           }
-          ? IsOutputFormatCompatible<ActualFormat, ExpectedFormat> extends true
-            ? IsStatusCompatible<ActualStatus, ExpectedStatus> extends true
-              ? [Candidate] extends [Expected]
-                ? Candidate
+          ? IsOpaqueOutputFormat<ActualFormat> extends true
+            ? Candidate
+            : IsOutputFormatCompatible<ActualFormat, ExpectedFormat> extends true
+              ? IsStatusCompatible<ActualStatus, ExpectedStatus> extends true
+                ? [Candidate] extends [Expected]
+                  ? Candidate
+                  : never
                 : never
               : never
-            : never
           : never
         : never,
     ] extends [never]
@@ -281,10 +294,9 @@ export type CheckMethodInNormalizedSchema<
   Path extends string,
   Method extends keyof ExpectedMethods & string,
 > = Method extends keyof ActualMethods
-  ? NormalizeReason<
+  ?
       | CheckMethodInputCompatibility<ActualMethods[Method], ExpectedMethods[Method], Path, Method>
       | CheckMethodOutputCompatibility<ActualMethods[Method], ExpectedMethods[Method], Path, Method>
-    >
   : { [Key in `${PrettyMethod<Method>} ${Path} is missing`]: never };
 
 export type CheckNormalizedSchema<
@@ -310,8 +322,37 @@ export type CheckNormalizedSchema<
       : never)
 >;
 
+export type CheckNormalizedSchemaFromSchema<
+  Schema,
+  Paths,
+  BasePath extends string = "",
+> = NormalizeReason<
+  | CheckBasePathScope<Paths, BasePath>
+  | (ExpectedEntries<Paths, BasePath> extends infer Entry
+      ? Entry extends {
+          path: infer Path extends string;
+          methods: infer Methods extends Record<string, unknown>;
+        }
+        ? {
+            [Method in keyof Methods & string]: CheckMethodInNormalizedSchema<
+              FindActualMethodsForPathInSchema<Schema, Path>,
+              Methods,
+              Path,
+              Method
+            >;
+          }[keyof Methods & string]
+        : never
+      : never)
+>;
+
 export type DefineAppCheckNormalizedSchema<
   App extends AnyHono,
   Paths,
   BasePath extends string = "",
 > = CheckNormalizedSchema<App, Paths, BasePath>;
+
+export type DefineAppCheckNormalizedSchemaFromSchema<
+  Schema,
+  Paths,
+  BasePath extends string = "",
+> = CheckNormalizedSchemaFromSchema<Schema, Paths, BasePath>;

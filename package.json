@@ -39,6 +39,7 @@
     "@hono/standard-validator": "^0.2.2",
     "@typescript/native-preview": "7.0.0-dev.20260419.1",
     "hono": "^4.12.14",
+    "openapi-typescript": "^7.13.0",
     "oxfmt": "^0.45.0",
     "oxlint": "^1.60.0",
     "vite-plus": "^0.1.18",
