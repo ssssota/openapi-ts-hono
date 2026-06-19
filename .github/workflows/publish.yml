@@ -29,4 +29,4 @@ jobs:
         run: pnpm test
 
       - name: Publish
-        run: pnpm publish --provenance --access public --no-git-checks || echo "pnpm publish failed, skipping"
+        run: pnpm stage publish --provenance --access public --no-git-checks || echo "pnpm publish failed, skipping"
