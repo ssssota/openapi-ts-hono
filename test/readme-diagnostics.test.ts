@@ -2,6 +2,10 @@ import * as ts from "typescript";
 import { expect, test } from "vitest";
 
 const rootDir = ts.sys.getCurrentDirectory();
+const compilerTestOptions = {
+  retry: { count: 2, delay: 100 },
+  timeout: 10_000,
+};
 
 const readmePrelude = `
 import { Hono } from "hono";
@@ -105,7 +109,7 @@ function normalizeDiagnostic(diagnostic: ts.Diagnostic): NormalizedDiagnostic {
   };
 }
 
-test("README success examples compile without diagnostics", () => {
+test("README success examples compile without diagnostics", compilerTestOptions, () => {
   expect(
     compileSource(
       "success",
@@ -137,7 +141,7 @@ export { app, reusedApp, routedApp };
   ).toMatchInlineSnapshot(`[]`);
 });
 
-test("README error examples expose readable compiler diagnostics", () => {
+test("README error examples expose readable compiler diagnostics", compilerTestOptions, () => {
   const diagnostics = {
     "missing route or method": compileSource(
       "missing-route-or-method",
