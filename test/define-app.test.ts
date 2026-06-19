@@ -81,6 +81,28 @@ type CreateUserPath = {
   };
 };
 
+type OptionalJsonBodyPath = {
+  "/transfer": {
+    post: {
+      requestBody?: {
+        content: { "application/json": { amount: number; from: string; to: string } };
+      };
+      responses: { 200: { content: { "application/json": { ok: boolean } } } };
+    };
+  };
+};
+
+type OptionalFormBodyPath = {
+  "/upload": {
+    post: {
+      requestBody?: {
+        content: { "multipart/form-data": { file: string } };
+      };
+      responses: { 200: { content: { "application/json": { ok: boolean } } } };
+    };
+  };
+};
+
 type SearchUsersPath = {
   "/users": {
     get: {
@@ -539,4 +561,40 @@ test("reports an incompatible response content type", () => {
   expectTypeOf<ValidationResult<typeof app, HealthTextPath>>().toEqualTypeOf<{
     "Output mismatch at GET /health for 200 text/plain": never;
   }>();
+});
+
+test("accepts optional json requestBody with a validator", () => {
+  const app = defineApp<OptionalJsonBodyPath>()(
+    new Hono().post(
+      "/transfer",
+      sValidator("json", z.object({ amount: z.number(), from: z.string(), to: z.string() })),
+      (c) => c.json({ ok: true }, 200),
+    ),
+  );
+
+  expectTypeOf<ValidationResult<typeof app, OptionalJsonBodyPath>>().toEqualTypeOf<unknown>();
+});
+
+test("accepts optional json requestBody without a validator", () => {
+  const app = defineApp<OptionalJsonBodyPath>()(
+    new Hono().post("/transfer", (c) => c.json({ ok: true }, 200)),
+  );
+
+  expectTypeOf<ValidationResult<typeof app, OptionalJsonBodyPath>>().toEqualTypeOf<unknown>();
+});
+
+test("still reports missing json validator when requestBody is required", () => {
+  const app = new Hono().post("/users", (c) => c.json({ id: "1" }));
+
+  expectTypeOf<ValidationResult<typeof app, CreateUserPath>>().toEqualTypeOf<{
+    "JSON input mismatch at POST /users": never;
+  }>();
+});
+
+test("accepts optional form requestBody without a validator", () => {
+  const app = defineApp<OptionalFormBodyPath>()(
+    new Hono().post("/upload", (c) => c.json({ ok: true }, 200)),
+  );
+
+  expectTypeOf<ValidationResult<typeof app, OptionalFormBodyPath>>().toEqualTypeOf<unknown>();
 });

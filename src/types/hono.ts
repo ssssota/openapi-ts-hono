@@ -1,4 +1,7 @@
+import type { Hono } from "hono";
+import type { ClientResponse, hc, InferRequestType } from "hono/client";
 import type { HonoBase } from "hono/hono-base";
+import type { ExtractSchema, Schema as HonoSchema } from "hono/types";
 import type { IntoSchema, NormalizeBasePath } from "./openapi.js";
 import type { NormalizeReason, PrettyMethod, UnionToIntersection } from "./utility.js";
 
@@ -27,8 +30,86 @@ export type ExpectedEntries<Paths, BasePath extends string = ""> = NormalizeSche
   IntoSchema<Paths, BasePath>
 >;
 
+// Enumerate paths from Hono's public schema extractor, then let hono/client interpret each
+// single-path schema so endpoint input/output/status follows the same contract as hc().
+type HonoClientReservedKey = "$path" | "$url" | "$ws";
+
+type HonoClientForSchemaPath<
+  App extends AnyHono,
+  Schema extends HonoSchema,
+  Path extends keyof Schema & string,
+> =
+  App extends HonoBase<infer Env, any, infer BasePath, any>
+    ? ReturnType<typeof hc<Hono<Env, Pick<Schema, Path>, BasePath>, "">>
+    : never;
+
+type EndpointFromClientResponse<Response, Input> =
+  Response extends ClientResponse<infer Output, infer Status, infer Format>
+    ? {
+        input: Input;
+        output: Output;
+        outputFormat: Format;
+        status: Status;
+      }
+    : never;
+
+type EndpointFromClientMethod<Method> = Method extends (...args: any[]) => Promise<infer Response>
+  ? EndpointFromClientResponse<Response, InferRequestType<Method>>
+  : never;
+
+type ClientEndpointMethods<Client> = {
+  [Method in keyof Client & string as Method extends `$${string}`
+    ? Method extends HonoClientReservedKey
+      ? never
+      : [EndpointFromClientMethod<Client[Method]>] extends [never]
+        ? never
+        : Method
+    : never]: EndpointFromClientMethod<Client[Method]>;
+};
+
+type TrimClientPathStartSlash<Path extends string> = Path extends `/${infer Rest}`
+  ? TrimClientPathStartSlash<Rest>
+  : Path;
+
+type ClientNodeAtPathSegments<Client, Segments extends string> = Segments extends ""
+  ? Client extends { index: infer Node }
+    ? Node
+    : never
+  : Segments extends `${infer Head}/${infer Rest}`
+    ? Head extends keyof Client
+      ? ClientNodeAtPathSegments<Client[Head], Rest>
+      : never
+    : Segments extends keyof Client
+      ? Client[Segments]
+      : never;
+
+type ClientNodeAtPath<Client, Path extends string> = ClientNodeAtPathSegments<
+  Client,
+  TrimClientPathStartSlash<Path>
+>;
+
+type ActualEntryFromSchemaPath<
+  App extends AnyHono,
+  Schema extends HonoSchema,
+  Path extends keyof Schema & string,
+> =
+  ClientEndpointMethods<
+    ClientNodeAtPath<HonoClientForSchemaPath<App, Schema, Path>, Path>
+  > extends infer Methods extends Record<string, unknown>
+    ? [keyof Methods] extends [never]
+      ? never
+      : {
+          path: Path;
+          methods: Methods;
+        }
+    : never;
+
 export type ActualEntries<App extends AnyHono> =
-  App extends HonoBase<any, infer Schema, any, any> ? NormalizeSchemaEntries<Schema> : never;
+  ExtractSchema<App> extends infer Schema extends HonoSchema
+    ? {
+        [Path in keyof Schema & string]: ActualEntryFromSchemaPath<App, Schema, Path>;
+      }[keyof Schema & string]
+    : never;
 
 export type PathMethodTableFromEntries<Entries> = UnionToIntersection<
   Entries extends {

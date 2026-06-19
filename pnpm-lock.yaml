@@ -26,6 +26,9 @@ importers:
       oxlint:
         specifier: ^1.60.0
         version: 1.60.0(oxlint-tsgolint@0.20.0)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
       vite-plus:
         specifier: ^0.1.18
         version: 0.1.18(typescript@6.0.3)(vite@8.0.8)

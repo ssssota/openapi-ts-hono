@@ -25,3 +25,29 @@ jobs:
 
       - name: Run test
         run: pnpm test
+
+  hono-compat:
+    runs-on: ubuntu-slim
+    strategy:
+      fail-fast: false
+      matrix:
+        hono:
+          - 4.0.0
+          - 4.12.14
+          - 4.x
+          - latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup project
+        uses: ./.github/actions/setup
+
+      - name: Install Hono ${{ matrix.hono }}
+        run: pnpm add -D hono@${{ matrix.hono }} --save-exact
+
+      - name: Run check
+        run: pnpm check
+
+      - name: Run test
+        run: pnpm test

@@ -42,7 +42,7 @@ type ExtractMergedParameterRecord<PathItem, Op, Location extends ParameterLocati
   : ExtractParameterRecord<Op, Location>;
 
 type ExtractRequestBodyContent<Op, ContentType extends string> = Op extends {
-  requestBody?: { content: infer Content extends object };
+  requestBody: { content: infer Content extends object };
 }
   ? ContentType extends keyof Content
     ? Content[ContentType]
