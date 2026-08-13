@@ -2,7 +2,7 @@ import type { Hono } from "hono";
 import type { ClientResponse, hc, InferRequestType } from "hono/client";
 import type { HonoBase } from "hono/hono-base";
 import type { ExtractSchema, Schema as HonoSchema } from "hono/types";
-import type { IntoSchema, NormalizeBasePath } from "./openapi.js";
+import type { ExtractOptionalResponseStatuses, IntoSchema, NormalizeBasePath } from "./openapi.js";
 import type { NormalizeReason, PrettyMethod, UnionToIntersection } from "./utility.js";
 
 export type AnyHono = HonoBase<any, any, any, any>;
@@ -335,11 +335,24 @@ type IsStatusCompatible<ActualStatus extends number, ExpectedStatus extends numb
     : false
   : false;
 
+type HasActualStatus<ActualMethod, ExpectedStatus extends number> = [
+  ActualMethod extends unknown
+    ? ActualMethod extends { status: infer ActualStatus extends number }
+      ? IsStatusCompatible<ActualStatus, ExpectedStatus> extends true
+        ? ActualMethod
+        : never
+      : never
+    : never,
+] extends [never]
+  ? false
+  : true;
+
 type CheckMethodOutputCompatibility<
   ActualMethod,
   ExpectedMethod,
   Path extends string,
   Method extends string,
+  OptionalStatuses extends number = never,
 > = ExpectedMethod extends {
   output: infer Expected;
   outputFormat: infer ExpectedFormat extends string;
@@ -365,7 +378,11 @@ type CheckMethodOutputCompatibility<
           : never
         : never,
     ] extends [never]
-    ? OutputMismatchReason<ExpectedLabel, Path, Method>
+    ? ExpectedStatus extends OptionalStatuses
+      ? HasActualStatus<ActualMethod, ExpectedStatus> extends true
+        ? OutputMismatchReason<ExpectedLabel, Path, Method>
+        : never
+      : OutputMismatchReason<ExpectedLabel, Path, Method>
     : never
   : never;
 
@@ -374,10 +391,17 @@ export type CheckMethodInNormalizedSchema<
   ExpectedMethods,
   Path extends string,
   Method extends keyof ExpectedMethods & string,
+  OptionalStatuses extends number = never,
 > = Method extends keyof ActualMethods
   ?
       | CheckMethodInputCompatibility<ActualMethods[Method], ExpectedMethods[Method], Path, Method>
-      | CheckMethodOutputCompatibility<ActualMethods[Method], ExpectedMethods[Method], Path, Method>
+      | CheckMethodOutputCompatibility<
+          ActualMethods[Method],
+          ExpectedMethods[Method],
+          Path,
+          Method,
+          OptionalStatuses
+        >
   : { [Key in `${PrettyMethod<Method>} ${Path} is missing`]: never };
 
 export type CheckNormalizedSchema<
@@ -396,7 +420,8 @@ export type CheckNormalizedSchema<
               FindActualMethodsForPath<App, Path>,
               Methods,
               Path,
-              Method
+              Method,
+              ExtractOptionalResponseStatuses<Paths>
             >;
           }[keyof Methods & string]
         : never
@@ -419,7 +444,8 @@ export type CheckNormalizedSchemaFromSchema<
               FindActualMethodsForPathInSchema<Schema, Path>,
               Methods,
               Path,
-              Method
+              Method,
+              ExtractOptionalResponseStatuses<Paths>
             >;
           }[keyof Methods & string]
         : never

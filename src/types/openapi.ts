@@ -2,7 +2,28 @@ export type ConvertPath<P extends string> = P extends `${infer A}{${infer Param}
   ? `${A}:${Param}${ConvertPath<B>}`
   : P;
 
-export type HttpMethod = "get" | "put" | "post" | "delete" | "options" | "head" | "patch" | "trace";
+export type HttpMethod =
+  | "get"
+  | "query"
+  | "put"
+  | "post"
+  | "delete"
+  | "options"
+  | "head"
+  | "patch"
+  | "trace";
+
+declare const optionalResponseStatuses: unique symbol;
+
+export type WithOptionalResponseStatuses<Paths, Status extends number> = Paths & {
+  readonly [optionalResponseStatuses]?: Status;
+};
+
+export type ExtractOptionalResponseStatuses<Paths> = Paths extends {
+  readonly [optionalResponseStatuses]?: infer Status;
+}
+  ? Extract<Status, number>
+  : never;
 
 type NormalizeBasePathInner<BasePath extends string> = BasePath extends `${infer Prefix}/`
   ? NormalizeBasePathInner<Prefix>

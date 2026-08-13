@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { defineApp } from "../src/index.js";
 import type { DefineAppCheckNormalizedSchema } from "../src/types/index.js";
+import type { WithOptionalResponseStatuses } from "../src/index.js";
 import type { paths as FixturePaths } from "./fixtures/simple-example.js";
 import type { HonoBase } from "hono/hono-base";
 
@@ -16,6 +17,21 @@ type UserPath = {
     };
   };
 };
+
+type UserPathWithErrors = {
+  "/users/{id}": {
+    get: {
+      parameters: UserPath["/users/{id}"]["get"]["parameters"];
+      responses: {
+        200: UserPath["/users/{id}"]["get"]["responses"][200];
+        401: { content: { "application/json": { error: string } } };
+        404: { content: { "text/plain": string } };
+      };
+    };
+  };
+};
+
+type UserPathWithOptionalErrors = WithOptionalResponseStatuses<UserPathWithErrors, 401 | 404>;
 
 type UserPathOutputOnly = {
   "/users/{id}": {
@@ -434,6 +450,45 @@ test("accepts multiple responses with different statuses and content types", () 
   );
 
   expectTypeOf<ValidationResult<typeof app, FindUserPath>>().toEqualTypeOf<unknown>();
+});
+
+test("reports every response status that is missing from the handler", () => {
+  const app = new Hono().get("/users/:id", (c) => {
+    // if (Math.random() > 0.5) {
+    //   return c.json({ error: "unauthorized" }, 401);
+    // }
+    // if (Math.random() > 0.5) {
+    //   return c.text("not found", 404);
+    // }
+
+    return c.json({ id: c.req.param("id") }, 200);
+  });
+
+  expectTypeOf<ValidationResult<typeof app, UserPathWithErrors>>().branded.toEqualTypeOf<{
+    "Output mismatch at GET /users/:id for 401 application/json": never;
+    "Output mismatch at GET /users/:id for 404 text/plain": never;
+  }>();
+});
+
+test("allows missing response statuses configured as optional", () => {
+  const app = new Hono().get("/users/:id", (c) => c.json({ id: c.req.param("id") }, 200));
+
+  expectTypeOf<ValidationResult<typeof app, UserPathWithOptionalErrors>>().toEqualTypeOf<unknown>();
+});
+
+test("still checks an optional response status when the handler returns it", () => {
+  const app = new Hono().get("/users/:id", (c) => {
+    if (Math.random() > 0.5) {
+      return c.json({ id: c.req.param("id") }, 200);
+    }
+
+    return c.json({ notFound: true }, 404);
+    // return c.body('', 404);
+  });
+
+  expectTypeOf<ValidationResult<typeof app, UserPathWithOptionalErrors>>().toEqualTypeOf<{
+    "Output mismatch at GET /users/:id for 404 text/plain": never;
+  }>();
 });
 
 test("accepts text/plain responses", () => {
