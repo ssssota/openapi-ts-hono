@@ -15,6 +15,17 @@ pnpm add hono
 pnpm add -D openapi-ts-hono openapi-typescript typescript
 ```
 
+When using `openapi-ts-hono`, include the DOM library in your TypeScript
+configuration:
+
+```json
+{
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM"]
+  }
+}
+```
+
 ## Usage
 
 `defineApp` is a type-level assertion. It returns the same Hono app at runtime,
