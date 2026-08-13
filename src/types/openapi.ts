@@ -174,11 +174,15 @@ export type IntoHonoEndpoint<PathItem, Op> = IntoHonoMethodOrInputOnly<PathItem,
 type IntoSchemaMethod<PathItem, Op> = IntoHonoEndpoint<PathItem, Op>;
 
 export type IntoSchema<Paths, BasePath extends string = ""> = {
-  [P in keyof Paths as [StripBasePath<P & string, BasePath>] extends [never]
-    ? never
-    : ConvertPath<StripBasePath<P & string, BasePath> & string>]: {
-    [M in keyof Paths[P] & HttpMethod as [NonNullable<Paths[P][M]>] extends [never]
+  [
+    P in keyof Paths as [StripBasePath<P & string, BasePath>] extends [never]
       ? never
-      : `$${M}`]: IntoSchemaMethod<Paths[P], NonNullable<Paths[P][M]>>;
+      : ConvertPath<StripBasePath<P & string, BasePath> & string>
+  ]: {
+    [
+      M in keyof Paths[P] & HttpMethod as [NonNullable<Paths[P][M]>] extends [never]
+        ? never
+        : `$${M}`
+    ]: IntoSchemaMethod<Paths[P], NonNullable<Paths[P][M]>>;
   };
 };

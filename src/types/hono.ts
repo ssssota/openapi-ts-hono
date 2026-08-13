@@ -58,13 +58,15 @@ type EndpointFromClientMethod<Method> = Method extends (...args: any[]) => Promi
   : never;
 
 type ClientEndpointMethods<Client> = {
-  [Method in keyof Client & string as Method extends `$${string}`
-    ? Method extends HonoClientReservedKey
-      ? never
-      : [EndpointFromClientMethod<Client[Method]>] extends [never]
+  [
+    Method in keyof Client & string as Method extends `$${string}`
+      ? Method extends HonoClientReservedKey
         ? never
-        : Method
-    : never]: EndpointFromClientMethod<Client[Method]>;
+        : [EndpointFromClientMethod<Client[Method]>] extends [never]
+          ? never
+          : Method
+      : never
+  ]: EndpointFromClientMethod<Client[Method]>;
 };
 
 type TrimClientPathStartSlash<Path extends string> = Path extends `/${infer Rest}`
