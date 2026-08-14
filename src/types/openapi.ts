@@ -100,7 +100,9 @@ type ExtractResponseContent<Response> = Response extends { content: infer Conten
       : never
     : never;
 
-type OutputFormatForContentType<ContentType extends string> = ContentType extends "application/json"
+type OutputFormatForContentType<ContentType extends string> = ContentType extends
+  | "application/json"
+  | `${string}+json`
   ? "json"
   : ContentType extends "text/plain"
     ? "text"

@@ -24,14 +24,15 @@ type UserPathWithErrors = {
       parameters: UserPath["/users/{id}"]["get"]["parameters"];
       responses: {
         200: UserPath["/users/{id}"]["get"]["responses"][200];
-        401: { content: { "application/json": { error: string } } };
+        401: { content: { "application/problem+json": { error: string } } };
         404: { content: { "text/plain": string } };
+        500: { content: { "application/json": string } };
       };
     };
   };
 };
 
-type UserPathWithOptionalErrors = WithOptionalResponseStatuses<UserPathWithErrors, 401 | 404>;
+type UserPathWithOptionalErrors = WithOptionalResponseStatuses<UserPathWithErrors, 401 | 404 | 500>;
 
 type UserPathOutputOnly = {
   "/users/{id}": {
@@ -452,6 +453,28 @@ test("accepts multiple responses with different statuses and content types", () 
   expectTypeOf<ValidationResult<typeof app, FindUserPath>>().toEqualTypeOf<unknown>();
 });
 
+test("accepts application/problem+json responses", () => {
+  const app = defineApp<UserPathWithErrors>()(
+    new Hono().get("/users/:id", (c) => {
+      if (Math.random() > 0.75) {
+        return c.json({ id: c.req.param("id") }, 200);
+      }
+
+      if (Math.random() > 0.5) {
+        return c.json({ error: "unauthorized" }, 401);
+      }
+
+      if (Math.random() > 0.5) {
+        return c.text("not found", 404);
+      }
+
+      return c.json("internal server error", 500);
+    }),
+  );
+
+  expectTypeOf<ValidationResult<typeof app, UserPathWithErrors>>().toEqualTypeOf<unknown>();
+});
+
 test("reports every response status that is missing from the handler", () => {
   const app = new Hono().get("/users/:id", (c) => {
     // if (Math.random() > 0.5) {
@@ -465,8 +488,9 @@ test("reports every response status that is missing from the handler", () => {
   });
 
   expectTypeOf<ValidationResult<typeof app, UserPathWithErrors>>().branded.toEqualTypeOf<{
-    "Output mismatch at GET /users/:id for 401 application/json": never;
+    "Output mismatch at GET /users/:id for 401 application/problem+json": never;
     "Output mismatch at GET /users/:id for 404 text/plain": never;
+    "Output mismatch at GET /users/:id for 500 application/json": never;
   }>();
 });
 
